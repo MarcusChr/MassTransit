@@ -24,20 +24,18 @@ public class MessagePackMessageSerializer : IMessageSerializer,
     public SerializerContext Deserialize(MessageBody body, Headers headers, Uri destinationAddress = null)
     {
         var messageBuffer = body.GetBytes();
-        var envelope = InternalDeserializeMessageBuffer<MessageEnvelope>(messageBuffer);
+        var envelope = DeserializeMessageBuffer<MessageEnvelope>(messageBuffer);
 
         var messageContext = new EnvelopeMessageContext(envelope, this);
 
         var messageTypes = envelope.MessageType ?? [];
 
-        return new MessagePackMessageSerializerContext(this, messageContext, messageTypes);
+        return new MessagePackMessageSerializerContext(this, messageContext, messageTypes, envelope);
     }
 
     public MessageBody GetMessageBody(string text)
     {
-        var messagePackSerializedObjectFromBase64 = Convert.FromBase64String(text);
-
-        return new BytesMessageBody(messagePackSerializedObjectFromBase64);
+        return new Base64MessageBody(text);
     }
 
     public MessageBody GetMessageBody<T>(SendContext<T> context)
@@ -51,7 +49,15 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         scope.Add("provider", ProviderKey);
     }
 
-    public T DeserializeObject<T>(object value, T defaultValue = default(T))
+    public static byte[] EnsureObjectBufferFormatIsByteArray(object serializedObjectAsUnknownFormat) =>
+        serializedObjectAsUnknownFormat switch
+        {
+            string base64EncodedMessagePackBody => Convert.FromBase64String(base64EncodedMessagePackBody),
+            byte[] messagePackBody => messagePackBody,
+            _ => throw new ArgumentException("The value must be a string or byte[]")
+        };
+
+    public T DeserializeObject<T>(object value, T defaultValue = default)
         where T : class =>
         InternalDeserializeObject(value, defaultValue);
 
@@ -68,24 +74,24 @@ public class MessagePackMessageSerializer : IMessageSerializer,
             return defaultValue;
         }
 
-        var messageSerializedBuffer = value switch
-        {
-            string base64EncodedMessagePackBody => Convert.FromBase64String(base64EncodedMessagePackBody),
-            byte[] messagePackBody => messagePackBody,
-            _ => throw new ArgumentException("The value must be a string or byte[]")
-        };
+        var messageSerializedBuffer = EnsureObjectBufferFormatIsByteArray(value);
 
-        return InternalDeserializeMessageBuffer<T>(messageSerializedBuffer);
+        return DeserializeMessageBuffer<T>(messageSerializedBuffer);
     }
 
-    static T InternalDeserializeMessageBuffer<T>(byte[] messageBuffer)
+    public static T DeserializeMessageBuffer<T>(byte[] messageBuffer)
     {
         return MessagePackSerializer.Deserialize<T>(messageBuffer, ContractlessStandardResolver.Options);
     }
 
+    public static byte[] SerializeMessageBuffer<T>(T message)
+    {
+        return MessagePackSerializer.Serialize(message, ContractlessStandardResolver.Options);
+    }
+
     static MessagePackMessageBody InternalSerializeObjectToMessagePackBody<T>(T value)
     {
-        var serializedObject = MessagePackSerializer.Serialize(value, ContractlessStandardResolver.Options);
+        var serializedObject = SerializeMessageBuffer(value);
         return new MessagePackMessageBody(serializedObject);
     }
 }
