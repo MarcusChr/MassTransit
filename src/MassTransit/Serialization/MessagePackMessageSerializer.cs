@@ -24,7 +24,7 @@ public class MessagePackMessageSerializer : IMessageSerializer,
     public SerializerContext Deserialize(MessageBody body, Headers headers, Uri destinationAddress = null)
     {
         var messageBuffer = body.GetBytes();
-        var envelope = DeserializeMessageBuffer<MessageEnvelope>(messageBuffer);
+        var envelope = DeserializeMessageBuffer<MessagePackEnvelope>(messageBuffer);
 
         var messageContext = new EnvelopeMessageContext(envelope, this);
 
@@ -39,8 +39,10 @@ public class MessagePackMessageSerializer : IMessageSerializer,
     }
 
     public MessageBody GetMessageBody<T>(SendContext<T> context)
-        where T : class =>
-        InternalSerializeObjectToMessagePackBody(context.Message);
+        where T : class
+    {
+        return new MessagePackMessageBody<T>(context);
+    }
 
     public void Probe(ProbeContext context)
     {
@@ -65,7 +67,15 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         where T : struct =>
         InternalDeserializeObject(value, defaultValue);
 
-    public MessageBody SerializeObject(object value) => InternalSerializeObjectToMessagePackBody(value);
+    public MessageBody SerializeObject(object value)
+    {
+        if (value is null)
+        {
+            return new EmptyMessageBody();
+        }
+
+        return new MessagePackMessageBody<object>(value);
+    }
 
     static T InternalDeserializeObject<T>(object value, T defaultValue)
     {
@@ -82,16 +92,5 @@ public class MessagePackMessageSerializer : IMessageSerializer,
     public static T DeserializeMessageBuffer<T>(byte[] messageBuffer)
     {
         return MessagePackSerializer.Deserialize<T>(messageBuffer, ContractlessStandardResolver.Options);
-    }
-
-    public static byte[] SerializeMessageBuffer<T>(T message)
-    {
-        return MessagePackSerializer.Serialize(message, ContractlessStandardResolver.Options);
-    }
-
-    static MessagePackMessageBody InternalSerializeObjectToMessagePackBody<T>(T value)
-    {
-        var serializedObject = SerializeMessageBuffer(value);
-        return new MessagePackMessageBody(serializedObject);
     }
 }

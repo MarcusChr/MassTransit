@@ -1,23 +1,37 @@
-﻿namespace MassTransit.Serialization;
+﻿#nullable enable
+namespace MassTransit.Serialization;
 
+using System;
 using System.IO;
+using MessagePack;
+using MessagePack.Resolvers;
 
 
-public class MessagePackMessageBody : MessageBody
+public class MessagePackMessageBody<TMessage> : MessageBody
+    where TMessage : class
 {
-    public long? Length { get; }
+    public long? Length => _lazyMessagePackSerializedObject.Value.Length;
 
-    readonly byte[] _messagePackSerializedObject;
+    readonly Lazy<byte[]> _lazyMessagePackSerializedObject;
 
-    public MessagePackMessageBody(byte[] messagePackSerializedObject)
+    public MessagePackMessageBody(SendContext<TMessage> context, MessagePackEnvelope? envelope = null)
     {
-        _messagePackSerializedObject = messagePackSerializedObject;
-        Length = _messagePackSerializedObject.Length;
+        _lazyMessagePackSerializedObject = new Lazy<byte[]>(() =>
+        {
+            var envelopeToSerialize = envelope ?? new MessagePackEnvelope(context, context.Message);
+
+            return MessagePackSerializer.Serialize(envelopeToSerialize, ContractlessStandardResolver.Options);
+        });
     }
 
-    public Stream GetStream() => new MemoryStream(_messagePackSerializedObject, false);
+    public MessagePackMessageBody(TMessage message)
+    {
+        _lazyMessagePackSerializedObject = new Lazy<byte[]>(() => MessagePackSerializer.Serialize(message));
+    }
 
-    public byte[] GetBytes() => _messagePackSerializedObject;
+    public Stream GetStream() => new MemoryStream(_lazyMessagePackSerializedObject.Value, false);
 
-    public string GetString() => System.Convert.ToBase64String(_messagePackSerializedObject);
+    public byte[] GetBytes() => _lazyMessagePackSerializedObject.Value;
+
+    public string GetString() => Convert.ToBase64String(_lazyMessagePackSerializedObject.Value);
 }
