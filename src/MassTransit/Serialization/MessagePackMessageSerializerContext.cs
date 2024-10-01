@@ -32,7 +32,7 @@ public class MessagePackMessageSerializerContext : BaseSerializerContext
         try
         {
             var messagePackSerializedObjectBuffer = MessagePackMessageSerializer.EnsureObjectBufferFormatIsByteArray(_envelope.Message);
-            message = MessagePackSerializer.Serialize(messageType, messagePackSerializedObjectBuffer);
+            message = MessagePackSerializer.Deserialize(messageType, messagePackSerializedObjectBuffer, InternalMessagePackResolver.Options);
 
             return true;
         }

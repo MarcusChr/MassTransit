@@ -17,8 +17,8 @@ public class MessagePackMessageSerializer : IMessageSerializer,
 
     public ConsumeContext Deserialize(ReceiveContext receiveContext)
     {
-        var deserializerContext = Deserialize(receiveContext.Body, receiveContext.TransportHeaders, receiveContext.InputAddress);
-        return new BodyConsumeContext(receiveContext, deserializerContext);
+        var serializerContext = Deserialize(receiveContext.Body, receiveContext.TransportHeaders, receiveContext.InputAddress);
+        return new BodyConsumeContext(receiveContext, serializerContext);
     }
 
     public SerializerContext Deserialize(MessageBody body, Headers headers, Uri destinationAddress = null)
@@ -91,6 +91,6 @@ public class MessagePackMessageSerializer : IMessageSerializer,
 
     public static T DeserializeMessageBuffer<T>(byte[] messageBuffer)
     {
-        return MessagePackSerializer.Deserialize<T>(messageBuffer, ContractlessStandardResolver.Options);
+        return MessagePackSerializer.Deserialize<T>(messageBuffer, InternalMessagePackResolver.Options);
     }
 }

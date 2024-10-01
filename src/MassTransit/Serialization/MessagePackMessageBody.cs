@@ -20,7 +20,7 @@ public class MessagePackMessageBody<TMessage> : MessageBody
         {
             var envelopeToSerialize = envelope ?? new MessagePackEnvelope(context, context.Message);
 
-            return MessagePackSerializer.Serialize(envelopeToSerialize, ContractlessStandardResolver.Options);
+            return MessagePackSerializer.Serialize(envelopeToSerialize, InternalMessagePackResolver.Options);
         });
     }
 

@@ -2,26 +2,27 @@
 
 using System;
 using System.Collections.Generic;
+using MessagePack;
 using Metadata;
 
 
 public class MessagePackEnvelope : MessageEnvelope
 {
-    public string MessageId { get; }
-    public string RequestId { get; }
-    public string CorrelationId { get; }
-    public string ConversationId { get; }
-    public string InitiatorId { get; }
-    public string SourceAddress { get; }
-    public string DestinationAddress { get; }
-    public string ResponseAddress { get; }
-    public string FaultAddress { get; }
-    public string[] MessageType { get; }
-    public object Message { get; }
-    public DateTime? ExpirationTime { get; }
-    public DateTime? SentTime { get; }
-    public Dictionary<string, object> Headers { get; }
-    public HostInfo Host { get; }
+    public string MessageId { get; set; }
+    public string RequestId { get; set; }
+    public string CorrelationId { get; set; }
+    public string ConversationId { get; set; }
+    public string InitiatorId { get; set; }
+    public string SourceAddress { get; set; }
+    public string DestinationAddress { get; set; }
+    public string ResponseAddress { get; set; }
+    public string FaultAddress { get; set; }
+    public string[] MessageType { get; set; }
+    public object Message { get; set; }
+    public DateTime? ExpirationTime { get; set; }
+    public DateTime? SentTime { get; set; }
+    public Dictionary<string, object> Headers { get; set; }
+    public HostInfo Host { get; set; }
 
     public MessagePackEnvelope(SendContext context, object message)
     {
@@ -54,7 +55,7 @@ public class MessagePackEnvelope : MessageEnvelope
 
         MessageType = context.SupportedMessageTypes;
 
-        Message = message;
+        Message = MessagePackSerializer.Serialize(message, InternalMessagePackResolver.Options);
 
         if (context.TimeToLive.HasValue)
             ExpirationTime = DateTime.UtcNow + context.TimeToLive;
@@ -72,6 +73,5 @@ public class MessagePackEnvelope : MessageEnvelope
     // Used for serialization.
     public MessagePackEnvelope()
     {
-
     }
 }
