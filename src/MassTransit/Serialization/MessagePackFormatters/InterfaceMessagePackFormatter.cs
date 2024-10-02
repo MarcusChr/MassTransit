@@ -3,33 +3,32 @@
 using System;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using MessagePack;
 using MessagePack.Formatters;
 using Metadata;
 
 
+delegate void SerializeDelegate<in TConcrete>(ref MessagePackWriter writer, TConcrete value, MessagePackSerializerOptions options);
+delegate TConcrete DeserializeDelegate<out TConcrete>(ref MessagePackReader reader, MessagePackSerializerOptions options);
+
 public class InterfaceMessagePackFormatter<TInterface> : IMessagePackFormatter<TInterface>
 {
-    delegate void SerializeDelegate(ref MessagePackWriter writer, object value, MessagePackSerializerOptions options);
-
-
-    delegate TInterface DeserializeDelegate(ref MessagePackReader reader, MessagePackSerializerOptions options);
-
-
+    static readonly Type _targetType;
     static readonly MethodInfo _getFormatterMethodInfo;
     static readonly MethodInfo _serializeMethodInfo;
     static readonly MethodInfo _deserializeMethodInfo;
 
     static InterfaceMessagePackFormatter()
     {
-        var targetType = TypeMetadataCache.GetImplementationType(typeof(TInterface));
+        _targetType = TypeMetadataCache.GetImplementationType(typeof(TInterface));
 
         _getFormatterMethodInfo = typeof(IFormatterResolver)
             .GetMethod(nameof(IFormatterResolver.GetFormatter))
-            .MakeGenericMethod(targetType);
+            .MakeGenericMethod(_targetType);
 
         var formatterType = typeof(IMessagePackFormatter<>)
-            .MakeGenericType(targetType);
+            .MakeGenericType(_targetType);
 
         _serializeMethodInfo = formatterType
             .GetMethod(nameof(IMessagePackFormatter<object>.Serialize));
@@ -45,12 +44,17 @@ public class InterfaceMessagePackFormatter<TInterface> : IMessagePackFormatter<T
 
         // Call Serialize method of IMessagePackFormatter
         var writerParameter = Expression.Parameter(typeof(MessagePackWriter).MakeByRefType(), "writer");
-        var valueParameter = Expression.Parameter(typeof(object), "value");
+        var valueParameterForCall = Expression.Parameter(_targetType, "value");
         var optionsParameter = Expression.Parameter(typeof(MessagePackSerializerOptions), "options");
 
         var formatterInstance = Expression.Constant(formatter);
-        var call = Expression.Call(formatterInstance, _serializeMethodInfo, writerParameter, valueParameter, optionsParameter);
-        var proxyFunc = Expression.Lambda<SerializeDelegate>(call, writerParameter, valueParameter, optionsParameter).Compile();
+        var call = Expression.Call(formatterInstance, _serializeMethodInfo, writerParameter, valueParameterForCall, optionsParameter);
+
+        var delegateType = typeof(SerializeDelegate<>).MakeGenericType(_targetType);
+
+        var proxyFuncDelegate = Expression.Lambda(delegateType, call, writerParameter, valueParameterForCall, optionsParameter).Compile();
+
+        var proxyFunc =  Unsafe.As<SerializeDelegate<TInterface>>(proxyFuncDelegate);
 
         proxyFunc(ref writer, value, options);
     }
@@ -64,7 +68,7 @@ public class InterfaceMessagePackFormatter<TInterface> : IMessagePackFormatter<T
 
         var formatterInstance = Expression.Constant(formatter);
         var call = Expression.Call(formatterInstance, _deserializeMethodInfo, readerParameter, optionsParameter);
-        var proxyFunc = Expression.Lambda<DeserializeDelegate>(call, readerParameter, optionsParameter).Compile();
+        var proxyFunc = Expression.Lambda<DeserializeDelegate<TInterface>>(call, readerParameter, optionsParameter).Compile();
 
         return proxyFunc(ref reader, options);
     }
