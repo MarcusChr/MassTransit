@@ -2,6 +2,7 @@
 
 using System;
 using System.Net.Mime;
+using Internals;
 using MessagePack;
 using MessagePack.Resolvers;
 

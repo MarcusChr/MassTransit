@@ -3,6 +3,7 @@ namespace MassTransit.Tests.Serialization
     using System;
     using Context;
     using InMemoryTransport;
+    using Internals;
     using MassTransit.Serialization;
     using NUnit.Framework;
     using TestFramework;

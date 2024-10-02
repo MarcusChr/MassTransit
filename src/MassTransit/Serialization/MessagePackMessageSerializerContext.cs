@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using MessagePack;
 
-
 public class MessagePackMessageSerializerContext : BaseSerializerContext
 {
     readonly MessageEnvelope _envelope;

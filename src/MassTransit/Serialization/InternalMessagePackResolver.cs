@@ -9,7 +9,7 @@ using MessagePackFormatters;
 internal static class InternalMessagePackResolver
 {
     static IFormatterResolver InternalResolverInstance { get; } =
-        CompositeResolver.Create(ContractlessStandardResolverAllowPrivate.Instance, HostInfoResolver.Instance);
+        CompositeResolver.Create(ContractlessStandardResolverAllowPrivate.Instance, MassTransitMessagePackFormatterResolver.Instance, DynamicGenericResolver.Instance);
 
     public static MessagePackSerializerOptions Options { get; } = MessagePackSerializerOptions.Standard.WithResolver(InternalResolverInstance);
 }
