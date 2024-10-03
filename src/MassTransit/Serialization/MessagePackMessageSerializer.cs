@@ -14,7 +14,9 @@ public class MessagePackMessageSerializer : IMessageSerializer,
     const string ContentTypeHeaderValue = "application/vnd.masstransit+msgpack";
     const string ProviderKey = "MessagePack";
 
-    public ContentType ContentType { get; } = new(ContentTypeHeaderValue);
+    public static readonly ContentType MessagePackContentType = new(ContentTypeHeaderValue);
+
+    public ContentType ContentType => MessagePackContentType;
 
     public ConsumeContext Deserialize(ReceiveContext receiveContext)
     {
