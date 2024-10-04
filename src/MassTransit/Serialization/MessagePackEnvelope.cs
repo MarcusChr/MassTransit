@@ -70,8 +70,10 @@ public class MessagePackEnvelope : MessageEnvelope
         Host = HostMetadataCache.Host;
     }
 
-    // Used for serialization.
-    public MessagePackEnvelope()
+    /// <summary>
+    /// Used for deserialization.
+    /// </summary>
+    private MessagePackEnvelope()
     {
     }
 }
