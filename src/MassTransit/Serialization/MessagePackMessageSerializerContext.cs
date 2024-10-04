@@ -21,10 +21,14 @@ public class MessagePackMessageSerializerContext : BaseSerializerContext
     public override bool TryGetMessage<T>(out T message)
         where T : class
     {
-        _ = TryGetMessage(typeof(T), out var outMessage);
+        if (!TryGetMessage(typeof(T), out var outMessage))
+        {
+            message = default;
+            return false;
+        }
 
-        message = outMessage as T;
-        return message != null;
+        message = (T)outMessage;
+        return true;
     }
 
     public override bool TryGetMessage(Type messageType, out object message)
