@@ -59,6 +59,8 @@ public class MessagePackMessageSerializerContext : BaseSerializerContext
     public override Dictionary<string, object> ToDictionary<T>(T message)
         where T : class
     {
-        throw new NotImplementedException();
+        var body = MessagePackSerializer.Serialize(message, InternalMessagePackResolver.Options);
+
+        return new Dictionary<string, object> { { MessagePackMessageSerializer.FutureStateObjectKey, body } };
     }
 }

@@ -1,6 +1,7 @@
 ﻿namespace MassTransit.Serialization;
 
 using System;
+using System.Collections.Generic;
 using System.Net.Mime;
 using MessagePack;
 
@@ -12,6 +13,8 @@ public class MessagePackMessageSerializer : IMessageSerializer,
     const string ProviderKey = "MessagePack";
 
     public static readonly ContentType MessagePackContentType = new(ContentTypeHeaderValue);
+
+    internal const string FutureStateObjectKey = "body";
 
     public ContentType ContentType => MessagePackContentType;
 
@@ -56,6 +59,7 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         {
             string base64EncodedMessagePackBody => Convert.FromBase64String(base64EncodedMessagePackBody),
             byte[] messagePackBody => messagePackBody,
+            Dictionary<string, object> futureState => ConvertObjectDictionaryToMessagePackBuffer(futureState),
             _ => throw new ArgumentException("The value must be a string or byte[]")
         };
 
@@ -77,6 +81,13 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         return new MessagePackMessageBody<object>(value);
     }
 
+    static byte[] ConvertObjectDictionaryToMessagePackBuffer(Dictionary<string, object> futureState)
+    {
+        var body = futureState[FutureStateObjectKey];
+
+        return EnsureObjectBufferFormatIsByteArray(body);
+    }
+
     static T InternalDeserializeObject<T>(object value, T defaultValue)
     {
         if (value is null || Equals(value, defaultValue))
@@ -89,7 +100,7 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         return DeserializeMessageBuffer<T>(messageSerializedBuffer);
     }
 
-    public static T DeserializeMessageBuffer<T>(byte[] messageBuffer)
+    static T DeserializeMessageBuffer<T>(byte[] messageBuffer)
     {
         return MessagePackSerializer.Deserialize<T>(messageBuffer, InternalMessagePackResolver.Options);
     }
