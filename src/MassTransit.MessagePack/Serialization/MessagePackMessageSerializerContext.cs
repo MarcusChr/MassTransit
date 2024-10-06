@@ -8,13 +8,11 @@ using MessagePack;
 public class MessagePackMessageSerializerContext : BaseSerializerContext
 {
     readonly MessageEnvelope _envelope;
-    readonly MessagePackMessageSerializer _serializer;
 
     public MessagePackMessageSerializerContext(MessagePackMessageSerializer serializer, MessageContext context, string[] supportedMessageTypes,
         MessageEnvelope envelope)
         : base(serializer, context, supportedMessageTypes)
     {
-        _serializer = serializer;
         _envelope = envelope;
     }
 
@@ -47,14 +45,31 @@ public class MessagePackMessageSerializerContext : BaseSerializerContext
         }
     }
 
-    public override IMessageSerializer GetMessageSerializer() => _serializer;
+    public override IMessageSerializer GetMessageSerializer()
+    {
+        if (_envelope is null)
+        {
+            throw new InvalidOperationException("Context has no envelope.");
+        }
+
+        return new MessagePackMessageBodySerializer(_envelope);
+    }
 
     public override IMessageSerializer GetMessageSerializer<T>(MessageEnvelope envelope, T message)
     {
-        throw new NotImplementedException();
+        var messageEnvelopeSerializer = new MessagePackMessageBodySerializer(envelope);
+
+        messageEnvelopeSerializer.OverrideMessage(message);
+
+        return messageEnvelopeSerializer;
     }
 
-    public override IMessageSerializer GetMessageSerializer(object message, string[] messageTypes) => _serializer;
+    public override IMessageSerializer GetMessageSerializer(object message, string[] messageTypes)
+    {
+        var messagePackEnvelope = new MessagePackEnvelope(this, message, messageTypes);
+
+        return new MessagePackMessageBodySerializer(messagePackEnvelope);
+    }
 
     public override Dictionary<string, object> ToDictionary<T>(T message)
         where T : class
