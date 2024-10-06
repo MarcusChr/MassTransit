@@ -1,10 +1,8 @@
-﻿#nullable enable
-namespace MassTransit.Serialization;
+﻿namespace MassTransit.Serialization;
 
 using System;
 using System.IO;
 using MessagePack;
-using MessagePack.Resolvers;
 
 
 public class MessagePackMessageBody<TMessage> : MessageBody

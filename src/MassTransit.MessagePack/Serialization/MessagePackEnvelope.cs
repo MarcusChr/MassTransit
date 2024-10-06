@@ -2,8 +2,8 @@
 
 using System;
 using System.Collections.Generic;
-using MessagePack;
 using Metadata;
+using MessagePack;
 
 
 public class MessagePackEnvelope : MessageEnvelope

@@ -1,9 +1,7 @@
 ﻿namespace MassTransit.Serialization;
 
 using MessagePack;
-using MessagePack.Formatters;
 using MessagePack.Resolvers;
-using MessagePackFormatters;
 
 
 internal static class InternalMessagePackResolver

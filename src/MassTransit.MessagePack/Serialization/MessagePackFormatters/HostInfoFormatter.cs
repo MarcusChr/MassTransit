@@ -1,8 +1,9 @@
 ﻿namespace MassTransit.Serialization.MessagePackFormatters;
 
+using Metadata;
 using MessagePack;
 using MessagePack.Formatters;
-using Metadata;
+
 
 internal class HostInfoFormatter : IMessagePackFormatter<HostInfo>
 {

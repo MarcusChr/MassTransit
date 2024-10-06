@@ -1,8 +1,8 @@
-﻿using System;
-using System.Net.Mime;
-using MassTransit.Serialization;
+﻿namespace MassTransit.Serialization;
 
-namespace MassTransit.Configuration;
+using System;
+using System.Net.Mime;
+
 
 public class MessagePackSerializerFactory : ISerializerFactory
 {

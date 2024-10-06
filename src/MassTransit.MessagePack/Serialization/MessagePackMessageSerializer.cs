@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Net.Mime;
 using MessagePack;
 
+
 public class MessagePackMessageSerializer : IMessageSerializer,
     IMessageDeserializer,
     IObjectDeserializer

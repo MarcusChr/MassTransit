@@ -4,9 +4,9 @@ using System;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Metadata;
 using MessagePack;
 using MessagePack.Formatters;
-using Metadata;
 
 
 delegate void SerializeDelegate<in TConcrete>(ref MessagePackWriter writer, TConcrete value, MessagePackSerializerOptions options);
