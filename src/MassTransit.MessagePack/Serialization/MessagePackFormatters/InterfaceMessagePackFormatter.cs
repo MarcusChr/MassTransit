@@ -4,9 +4,9 @@ using System;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using Metadata;
 using MessagePack;
 using MessagePack.Formatters;
+using Metadata;
 
 
 delegate void SerializeDelegate<in TConcrete>(ref MessagePackWriter writer, TConcrete value, MessagePackSerializerOptions options);
@@ -14,62 +14,94 @@ delegate TConcrete DeserializeDelegate<out TConcrete>(ref MessagePackReader read
 
 public class InterfaceMessagePackFormatter<TInterface> : IMessagePackFormatter<TInterface>
 {
-    static readonly Type _targetType;
-    static readonly MethodInfo _getFormatterMethodInfo;
-    static readonly MethodInfo _serializeMethodInfo;
-    static readonly MethodInfo _deserializeMethodInfo;
+    static readonly FormatterProxyInfo _formatterProxyInfo;
 
     static InterfaceMessagePackFormatter()
     {
-        _targetType = TypeMetadataCache.GetImplementationType(typeof(TInterface));
-
-        _getFormatterMethodInfo = typeof(IFormatterResolver)
-            .GetMethod(nameof(IFormatterResolver.GetFormatter))
-            .MakeGenericMethod(_targetType);
-
-        var formatterType = typeof(IMessagePackFormatter<>)
-            .MakeGenericType(_targetType);
-
-        _serializeMethodInfo = formatterType
-            .GetMethod(nameof(IMessagePackFormatter<object>.Serialize));
-
-        _deserializeMethodInfo = formatterType
-            .GetMethod(nameof(IMessagePackFormatter<object>.Deserialize));
+        var proxyType = TypeMetadataCache.GetImplementationType(typeof(TInterface));
+        _formatterProxyInfo = GetFormatterProxyInfoFromType(proxyType);
     }
 
     public void Serialize(ref MessagePackWriter writer, TInterface value, MessagePackSerializerOptions options)
     {
+        FormatterProxyInfo formatterProxyInfoToUse;
+
+        var typeOfValue = value?.GetType();
+
+        // If the value is not null and not an interface, use the formatter for the concrete type.
+        if (typeOfValue != null && !typeOfValue.IsInterface)
+        {
+            formatterProxyInfoToUse = GetFormatterProxyInfoFromType(typeOfValue);
+        }
+        else
+        {
+            formatterProxyInfoToUse = _formatterProxyInfo;
+        }
+
+
         // IMessagePackFormatter of unknown type
-        var formatter = _getFormatterMethodInfo.Invoke(options.Resolver, BindingFlags.Default, null, null, null);
+        var formatter = formatterProxyInfoToUse.GetFormatterMethodInfo.Invoke(options.Resolver, BindingFlags.Default, null, null, null);
 
         // Call Serialize method of IMessagePackFormatter
         var writerParameter = Expression.Parameter(typeof(MessagePackWriter).MakeByRefType(), "writer");
-        var valueParameterForCall = Expression.Parameter(_targetType, "value");
+        var valueParameterForCall = Expression.Parameter(formatterProxyInfoToUse.TargetType, "value");
         var optionsParameter = Expression.Parameter(typeof(MessagePackSerializerOptions), "options");
 
         var formatterInstance = Expression.Constant(formatter);
-        var call = Expression.Call(formatterInstance, _serializeMethodInfo, writerParameter, valueParameterForCall, optionsParameter);
+        var call = Expression.Call(formatterInstance, formatterProxyInfoToUse.SerializeMethodInfo, writerParameter, valueParameterForCall, optionsParameter);
 
-        var delegateType = typeof(SerializeDelegate<>).MakeGenericType(_targetType);
+        var delegateType = typeof(SerializeDelegate<>).MakeGenericType(formatterProxyInfoToUse.TargetType);
 
         var proxyFuncDelegate = Expression.Lambda(delegateType, call, writerParameter, valueParameterForCall, optionsParameter).Compile();
 
-        var proxyFunc =  Unsafe.As<SerializeDelegate<TInterface>>(proxyFuncDelegate);
+        var proxyFunc = Unsafe.As<SerializeDelegate<TInterface>>(proxyFuncDelegate);
 
         proxyFunc(ref writer, value, options);
     }
 
     public TInterface Deserialize(ref MessagePackReader reader, MessagePackSerializerOptions options)
     {
-        var formatter = _getFormatterMethodInfo.Invoke(options.Resolver, BindingFlags.Default, null, null, null);
+        var formatter = _formatterProxyInfo.GetFormatterMethodInfo.Invoke(options.Resolver, BindingFlags.Default, null, null, null);
 
         var readerParameter = Expression.Parameter(typeof(MessagePackReader).MakeByRefType(), "reader");
         var optionsParameter = Expression.Parameter(typeof(MessagePackSerializerOptions), "options");
 
         var formatterInstance = Expression.Constant(formatter);
-        var call = Expression.Call(formatterInstance, _deserializeMethodInfo, readerParameter, optionsParameter);
+        var call = Expression.Call(formatterInstance, _formatterProxyInfo.DeserializeMethodInfo, readerParameter, optionsParameter);
         var proxyFunc = Expression.Lambda<DeserializeDelegate<TInterface>>(call, readerParameter, optionsParameter).Compile();
 
         return proxyFunc(ref reader, options);
+    }
+
+    private static FormatterProxyInfo GetFormatterProxyInfoFromType(Type targetType)
+    {
+        var getFormatterMethodInfo = typeof(IFormatterResolver)
+                    .GetMethod(nameof(IFormatterResolver.GetFormatter))
+                    .MakeGenericMethod(targetType);
+
+        var formatterType = typeof(IMessagePackFormatter<>)
+            .MakeGenericType(targetType);
+
+        var serializeMethodInfo = formatterType
+            .GetMethod(nameof(IMessagePackFormatter<object>.Serialize));
+
+        var deserializeMethodInfo = formatterType
+            .GetMethod(nameof(IMessagePackFormatter<object>.Deserialize));
+
+        return new FormatterProxyInfo
+        {
+            TargetType = targetType,
+            GetFormatterMethodInfo = getFormatterMethodInfo,
+            SerializeMethodInfo = serializeMethodInfo,
+            DeserializeMethodInfo = deserializeMethodInfo
+        };
+    }
+
+    internal struct FormatterProxyInfo
+    {
+        public Type TargetType { get; set; }
+        public MethodInfo GetFormatterMethodInfo { get; set; }
+        public MethodInfo SerializeMethodInfo { get; set; }
+        public MethodInfo DeserializeMethodInfo { get; set; }
     }
 }
