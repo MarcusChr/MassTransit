@@ -24,7 +24,7 @@ public class MessagePackMessageBody<TMessage> : MessageBody
 
     public MessagePackMessageBody(TMessage message)
     {
-        _lazyMessagePackSerializedObject = new Lazy<byte[]>(() => MessagePackSerializer.Serialize(message));
+        _lazyMessagePackSerializedObject = new Lazy<byte[]>(() => MessagePackSerializer.Serialize(message, InternalMessagePackResolver.Options));
     }
 
     public Stream GetStream() => new MemoryStream(_lazyMessagePackSerializedObject.Value, false);
