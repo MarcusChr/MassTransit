@@ -60,13 +60,22 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         {
             string base64EncodedMessagePackBody => Convert.FromBase64String(base64EncodedMessagePackBody),
             byte[] messagePackBody => messagePackBody,
-            Dictionary<string, object> futureState => ConvertObjectDictionaryToMessagePackBuffer(futureState),
+            Dictionary<string, object> futureState when futureState.TryGetValue(FutureStateObjectKey, out var futureBody) => EnsureObjectBufferFormatIsByteArray(futureBody),
             _ => throw new ArgumentException("The value must be a string or byte[]")
         };
 
     public T DeserializeObject<T>(object value, T defaultValue = default)
-        where T : class =>
-        InternalDeserializeObject(value, defaultValue);
+        where T : class
+    {
+
+        if (value is Dictionary<string, object> objectByStringPairs
+            && !objectByStringPairs.ContainsKey(FutureStateObjectKey))
+        {
+            return SystemTextJsonMessageSerializer.Instance.DeserializeObject(objectByStringPairs, defaultValue);
+        }
+
+        return InternalDeserializeObject(value, defaultValue);
+    }
 
     public T? DeserializeObject<T>(object value, T? defaultValue = null)
         where T : struct =>
@@ -80,13 +89,6 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         }
 
         return new MessagePackMessageBody<object>(value);
-    }
-
-    static byte[] ConvertObjectDictionaryToMessagePackBuffer(Dictionary<string, object> futureState)
-    {
-        var body = futureState[FutureStateObjectKey];
-
-        return EnsureObjectBufferFormatIsByteArray(body);
     }
 
     static T InternalDeserializeObject<T>(object value, T defaultValue)
