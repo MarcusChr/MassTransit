@@ -7,10 +7,10 @@ using MessagePack;
 
 public class MessagePackMessageSerializerContext : BaseSerializerContext
 {
-    readonly MessageEnvelope _envelope;
+    readonly MessagePackEnvelope _envelope;
 
     public MessagePackMessageSerializerContext(MessagePackMessageSerializer serializer, MessageContext context, string[] supportedMessageTypes,
-        MessageEnvelope envelope)
+        MessagePackEnvelope envelope)
         : base(serializer, context, supportedMessageTypes)
     {
         _envelope = envelope;
@@ -33,9 +33,15 @@ public class MessagePackMessageSerializerContext : BaseSerializerContext
     {
         try
         {
-            var messagePackSerializedObjectBuffer = MessagePackMessageSerializer.EnsureObjectBufferFormatIsByteArray(_envelope.Message);
-            message = MessagePackSerializer.Deserialize(messageType, messagePackSerializedObjectBuffer, InternalMessagePackResolver.Options);
+            if (!IsSupportedMessageType(messageType))
+            {
+                message = null;
+                return false;
+            }
 
+            var messagePackSerializedObjectBuffer = MessagePackMessageSerializer.EnsureObjectBufferFormatIsByteArray(_envelope.Message);
+
+            message = MessagePackSerializer.Deserialize(messageType, messagePackSerializedObjectBuffer, InternalMessagePackResolver.Options);
             return true;
         }
         catch
