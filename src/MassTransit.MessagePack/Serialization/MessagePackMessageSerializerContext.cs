@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using MessagePack;
+using MassTransit.Internals.Json;
 
 
 public class MessagePackMessageSerializerContext : BaseSerializerContext
@@ -80,8 +81,12 @@ public class MessagePackMessageSerializerContext : BaseSerializerContext
     public override Dictionary<string, object> ToDictionary<T>(T message)
         where T : class
     {
-        var body = MessagePackSerializer.Serialize(message, InternalMessagePackResolver.Options);
+        if (message is null)
+        {
+            return new Dictionary<string, object>(0, StringComparer.OrdinalIgnoreCase);
+        }
 
-        return new Dictionary<string, object> { { MessagePackMessageSerializer.FutureStateObjectKey, body } };
+        // We serialize internally using JSON.
+        return message.Transform<Dictionary<string, object>>(SystemTextJsonMessageSerializer.Options);
     }
 }

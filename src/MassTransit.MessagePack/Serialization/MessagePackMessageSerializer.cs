@@ -3,6 +3,8 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Mime;
+using MassTransit.Initializers.TypeConverters;
+using MassTransit.Internals.Json;
 using MessagePack;
 
 
@@ -14,8 +16,6 @@ public class MessagePackMessageSerializer : IMessageSerializer,
     const string ProviderKey = "MessagePack";
 
     public static readonly ContentType MessagePackContentType = new(ContentTypeHeaderValue);
-
-    internal const string FutureStateObjectKey = "body";
 
     public ContentType ContentType => MessagePackContentType;
 
@@ -60,26 +60,28 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         {
             string base64EncodedMessagePackBody => Convert.FromBase64String(base64EncodedMessagePackBody),
             byte[] messagePackBody => messagePackBody,
-            Dictionary<string, object> futureState when futureState.TryGetValue(FutureStateObjectKey, out var futureBody) => EnsureObjectBufferFormatIsByteArray(futureBody),
-            _ => throw new ArgumentException("The value must be a string or byte[]")
+            _ => MessagePackSerializer.Serialize(serializedObjectAsUnknownFormat, InternalMessagePackResolver.Options)
         };
 
     public T DeserializeObject<T>(object value, T defaultValue = default)
         where T : class
     {
-
-        if (value is Dictionary<string, object> objectByStringPairs
-            && !objectByStringPairs.ContainsKey(FutureStateObjectKey))
+        if (value is Dictionary<string, object> objectByStringPairs)
         {
-            return SystemTextJsonMessageSerializer.Instance.DeserializeObject(objectByStringPairs, defaultValue);
+            // If the object is a Dictionary<string, object>, we deserialize internally using JSON.
+            // MessagePack is case sensitive, and would not be able to serialize without correct casing.
+
+            return objectByStringPairs.Transform<T>(SystemTextJsonMessageSerializer.Options);
         }
 
         return InternalDeserializeObject(value, defaultValue);
     }
 
     public T? DeserializeObject<T>(object value, T? defaultValue = null)
-        where T : struct =>
-        InternalDeserializeObject(value, defaultValue);
+        where T : struct
+    {
+        return InternalDeserializeObject(value, defaultValue);
+    }
 
     public MessageBody SerializeObject(object value)
     {
@@ -96,6 +98,18 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         if (value is null || Equals(value, defaultValue))
         {
             return defaultValue;
+        }
+
+        if (value is T valueAsT)
+        {
+            return valueAsT;
+        }
+
+        if (value is string text
+            && TypeConverterCache.TryGetTypeConverter<T, string>(out var typeConverter)
+            && typeConverter.TryConvert(text, out var result))
+        {
+            return result;
         }
 
         var messageSerializedBuffer = EnsureObjectBufferFormatIsByteArray(value);
