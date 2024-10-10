@@ -484,12 +484,15 @@ namespace MassTransit.SqlTransport.PostgreSql
                     WHERE md.message_delivery_id IN (
                         WITH ready AS (
                             SELECT mdx.message_delivery_id, mdx.enqueue_time, mdx.lock_id, mdx.priority,
-                                    row_number() over ( partition by mdx.partition_key
-                                        order by mdx.priority, mdx.enqueue_time, mdx.message_delivery_id ) as row_normal,
-                                    row_number() over ( partition by mdx.partition_key
-                                        order by mdx.priority, mdx.message_delivery_id,mdx.enqueue_time )  as row_ordered,
+                                   row_number() over ( partition by mdx.partition_key
+                                       order by mdx.priority, mdx.enqueue_time, mdx.message_delivery_id ) as row_normal,
+                                   row_number() over ( partition by mdx.partition_key
+                                       order by mdx.priority, mdx.message_delivery_id,mdx.enqueue_time )  as row_ordered,
                                    first_value(CASE WHEN mdx.enqueue_time > v_now THEN mdx.consumer_id END) over (partition by mdx.partition_key
-                                       order by mdx.enqueue_time DESC, mdx.message_delivery_id DESC) as consumer_id
+                                       order by mdx.enqueue_time DESC, mdx.message_delivery_id DESC) as consumer_id,
+                                   sum(CASE WHEN mdx.enqueue_time > v_now AND mdx.consumer_id = fetch_consumer_id AND mdx.lock_id IS NOT NULL THEN 1 END)
+                                       over (partition by mdx.partition_key
+                                           order by mdx.enqueue_time DESC, mdx.message_delivery_id DESC) as active_count
                             FROM "{0}".message_delivery mdx
                             WHERE mdx.queue_id = v_queue_id
                                 AND mdx.delivery_count < mdx.max_delivery_count
@@ -499,6 +502,7 @@ namespace MassTransit.SqlTransport.PostgreSql
                             WHERE ( ( ordered = 0 AND ready.row_normal <= concurrent_count) OR ( ordered = 1 AND ready.row_ordered <= concurrent_count ) )
                             AND ready.enqueue_time <= v_now
                             AND (ready.consumer_id IS NULL OR ready.consumer_id = fetch_consumer_id)
+                            AND (active_count < concurrent_count OR active_count IS NULL)
                             ORDER BY ready.priority, ready.enqueue_time, ready.message_delivery_id
                         LIMIT fetch_count FOR UPDATE SKIP LOCKED)
                     FOR UPDATE OF md SKIP LOCKED)
@@ -569,6 +573,30 @@ namespace MassTransit.SqlTransport.PostgreSql
                 END IF;
 
                 RETURN v_message_delivery_id;
+            END;
+            $$;
+
+            CREATE OR REPLACE FUNCTION "{0}".touch_queue(queue_name text)
+                RETURNS bigint
+                LANGUAGE PLPGSQL
+            AS
+            $$
+            DECLARE
+                v_queue_id              bigint;
+            BEGIN
+                IF queue_name IS NULL OR LENGTH(queue_name) < 1 THEN
+                    RAISE EXCEPTION 'Queue name must not be null';
+                END IF;
+
+                SELECT INTO v_queue_id q.Id FROM "{0}".queue q WHERE q.name = queue_name AND q.type = 1;
+                IF v_queue_id IS NULL THEN
+                    RAISE EXCEPTION 'Queue not found: %', queue_name;
+                END IF;
+
+                INSERT INTO "{0}".queue_metric_capture (captured, queue_id, consume_count, error_count, dead_letter_count)
+                    VALUES (now() at time zone 'utc', v_queue_id, 0, 0, 0);
+
+                RETURN v_queue_id;
             END;
             $$;
 
@@ -954,15 +982,15 @@ namespace MassTransit.SqlTransport.PostgreSql
             BEGIN
                 WITH expired AS (SELECT q.id, q.name, (now() at time zone 'utc') - make_interval(secs => q.auto_delete) as expires_at
                                  FROM "{0}".queue q
-                                 WHERE q.auto_delete IS NOT NULL AND (now() at time zone 'utc') - make_interval(secs => q.auto_delete) > updated),
+                                 WHERE q.type = 1 AND q.auto_delete IS NOT NULL AND (now() at time zone 'utc') - make_interval(secs => q.auto_delete) > updated),
                      metrics AS (SELECT qm.queue_id, MAX(start_time) as start_time
                                  FROM "{0}".queue_metric qm
                                           INNER JOIN expired q2 on q2.id = qm.queue_id
                                  WHERE start_time + duration > q2.expires_at
                                  GROUP BY qm.queue_id)
                 DELETE FROM "{0}".queue qd
-                       USING (SELECT qdx.id FROM expired qdx WHERE qdx.id NOT IN (SELECT queue_id FROM metrics)) exp
-                       WHERE qd.id = exp.id;
+                       USING (SELECT qdx.name FROM expired qdx WHERE qdx.id NOT IN (SELECT queue_id FROM metrics)) exp
+                       WHERE qd.name = exp.name;
 
                 RETURN 0;
             END;
@@ -1023,7 +1051,7 @@ namespace MassTransit.SqlTransport.PostgreSql
             CREATE OR REPLACE VIEW "{0}".queues
             AS
             SELECT x.queue_name,
-                   bool_or(x.queue_auto_delete)                  as queue_auto_delete,
+                   MAX(x.queue_auto_delete)                      as queue_auto_delete,
                    SUM(x.message_ready)                          as ready,
                    SUM(x.message_scheduled)                      as scheduled,
                    SUM(x.message_error)                          as errored,
@@ -1035,7 +1063,7 @@ namespace MassTransit.SqlTransport.PostgreSql
                    COALESCE(MAX(x.duration), 0)::int             as count_duration
 
             FROM (SELECT q.name                                               as queue_name,
-                         CASE WHEN q.auto_delete = 1 THEN true else false end as queue_auto_delete,
+                         q.auto_delete                                        as queue_auto_delete,
                          qm.consume_count,
                          qm.error_count,
                          qm.dead_letter_count,
@@ -1082,6 +1110,18 @@ namespace MassTransit.SqlTransport.PostgreSql
                                       ORDER BY qm.queue_id, qm.start_time DESC) qm ON qm.queue_id = q.id) x
             GROUP BY x.queue_name;
 
+            CREATE OR REPLACE VIEW "{0}".subscriptions
+            AS
+                SELECT t.name as topic_name, 'topic' as destination_type, t2.name as destination_name, ts.sub_type as subscription_type, ts.routing_key
+                FROM "{0}".topic t
+                         JOIN "{0}".topic_subscription ts ON t.id = ts.source_id
+                         JOIN "{0}".topic t2 on t2.id = ts.destination_id
+                UNION
+                SELECT t.name as topic_name, 'queue' as destination_type, q.name as destination_name, qs.sub_type as subscription_type, qs.routing_key
+                FROM "{0}".queue_subscription qs
+                         LEFT JOIN "{0}".queue q on qs.destination_id = q.id
+                         LEFT JOIN "{0}".topic t on qs.source_id = t.id;
+
             SET ROLE none;
             """;
 
@@ -1122,7 +1162,8 @@ namespace MassTransit.SqlTransport.PostgreSql
             {
                 var sanitizedSchemaName = NotifyChannel.SanitizeSchemaName(options.Schema);
 
-                await connection.Connection.ExecuteScalarAsync<int>(string.Format(CreateInfrastructureSql, options.Schema, options.Role, sanitizedSchemaName)).ConfigureAwait(false);
+                await connection.Connection.ExecuteScalarAsync<int>(string.Format(CreateInfrastructureSql, options.Schema, options.Role, sanitizedSchemaName))
+                    .ConfigureAwait(false);
 
                 _logger.LogDebug("Transport infrastructure in schema {Schema} created (or updated)", options.Schema);
             }

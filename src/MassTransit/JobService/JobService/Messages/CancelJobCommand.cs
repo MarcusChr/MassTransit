@@ -9,6 +9,5 @@ public class CancelJobCommand :
     CancelJob
 {
     public Guid JobId { get; set; }
-    public DateTime Timestamp { get; set; }
     public string? Reason { get; set; }
 }

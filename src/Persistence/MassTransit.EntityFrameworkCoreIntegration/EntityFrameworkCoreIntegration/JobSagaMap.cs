@@ -16,6 +16,8 @@ namespace MassTransit.EntityFrameworkCoreIntegration
 
         protected override void Configure(EntityTypeBuilder<JobSaga> entity, ModelBuilder model)
         {
+            entity.OptOutOfEntityFrameworkConventions();
+
             entity.Property(x => x.CurrentState);
 
             entity.Ignore(x => x.Version);
@@ -58,6 +60,9 @@ namespace MassTransit.EntityFrameworkCoreIntegration
             entity.Property(x => x.LastProgressSequenceNumber);
 
             entity.Property(x => x.JobState)
+                .HasJsonConversion();
+
+            entity.Property(x => x.JobProperties)
                 .HasJsonConversion();
 
             entity.Property(x => x.CronExpression);
