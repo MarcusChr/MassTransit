@@ -73,7 +73,7 @@ public class InterfaceMessagePackFormatter<TInterface> : IMessagePackFormatter<T
         return proxyFunc(ref reader, options);
     }
 
-    private static FormatterProxyInfo GetFormatterProxyInfoFromType(Type targetType)
+    static FormatterProxyInfo GetFormatterProxyInfoFromType(Type targetType)
     {
         var getFormatterMethodInfo = typeof(IFormatterResolver)
                     .GetMethod(nameof(IFormatterResolver.GetFormatter))
@@ -97,7 +97,7 @@ public class InterfaceMessagePackFormatter<TInterface> : IMessagePackFormatter<T
         };
     }
 
-    internal struct FormatterProxyInfo
+    struct FormatterProxyInfo
     {
         public Type TargetType { get; set; }
         public MethodInfo GetFormatterMethodInfo { get; set; }

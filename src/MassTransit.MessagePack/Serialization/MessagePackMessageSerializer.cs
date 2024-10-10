@@ -69,7 +69,7 @@ public class MessagePackMessageSerializer : IMessageSerializer,
         if (value is Dictionary<string, object> objectByStringPairs)
         {
             // If the object is a Dictionary<string, object>, we deserialize internally using JSON.
-            // MessagePack is case sensitive, and would not be able to serialize without correct casing.
+            // MessagePack is case sensitive, and would not be able to deserialize without correct casing.
 
             return objectByStringPairs.Transform<T>(SystemTextJsonMessageSerializer.Options);
         }
