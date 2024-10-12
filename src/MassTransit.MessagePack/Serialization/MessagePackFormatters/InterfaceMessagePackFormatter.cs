@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 using MessagePack;
 using MessagePack.Formatters;
 using Metadata;
-
+using Internals;
 
 delegate void SerializeDelegate<in TConcrete>(ref MessagePackWriter writer, TConcrete value, MessagePackSerializerOptions options);
 
@@ -56,7 +56,9 @@ public class InterfaceMessagePackFormatter<TInterface> :
 
         var delegateType = typeof(SerializeDelegate<>).MakeGenericType(formatterProxyInfoToUse.TargetType);
 
-        var proxyFuncDelegate = Expression.Lambda(delegateType, call, writerParameter, valueParameterForCall, optionsParameter).Compile();
+        var proxyFuncDelegate = Expression
+            .Lambda(delegateType, call, writerParameter, valueParameterForCall, optionsParameter)
+            .CompileFast();
 
         var proxyFunc = Unsafe.As<SerializeDelegate<TInterface>>(proxyFuncDelegate);
 
@@ -72,7 +74,9 @@ public class InterfaceMessagePackFormatter<TInterface> :
 
         var formatterInstance = Expression.Constant(formatter);
         var call = Expression.Call(formatterInstance, _formatterProxyInfo.DeserializeMethodInfo, readerParameter, optionsParameter);
-        var proxyFunc = Expression.Lambda<DeserializeDelegate<TInterface>>(call, readerParameter, optionsParameter).Compile();
+        var proxyFunc = Expression
+            .Lambda<DeserializeDelegate<TInterface>>(call, readerParameter, optionsParameter)
+            .CompileFast();
 
         return proxyFunc(ref reader, options);
     }
