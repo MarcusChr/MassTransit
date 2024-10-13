@@ -19,6 +19,7 @@ public class MessagePackEnvelope :
     public string ResponseAddress { get; set; }
     public string FaultAddress { get; set; }
     public string[] MessageType { get; set; }
+    public bool IsMessageNativeMessagePackSerialized { get; set; }
     public object Message { get; set; }
     public DateTime? ExpirationTime { get; set; }
     public DateTime? SentTime { get; set; }
@@ -56,6 +57,7 @@ public class MessagePackEnvelope :
 
         MessageType = context.SupportedMessageTypes;
 
+        IsMessageNativeMessagePackSerialized = true;
         Message = MessagePackSerializer.Serialize(message, InternalMessagePackResolver.Options);
 
         if (context.TimeToLive.HasValue)
@@ -84,6 +86,7 @@ public class MessagePackEnvelope :
         FaultAddress = envelope.FaultAddress;
 
         MessageType = envelope.MessageType;
+        IsMessageNativeMessagePackSerialized = true;
         Message = MessagePackSerializer.Serialize(envelope.Message, InternalMessagePackResolver.Options);
 
         ExpirationTime = envelope.ExpirationTime;
@@ -127,6 +130,7 @@ public class MessagePackEnvelope :
 
         MessageType = messageTypesNames;
 
+        IsMessageNativeMessagePackSerialized = true;
         Message = MessagePackSerializer.Serialize(message, InternalMessagePackResolver.Options);
 
         ExpirationTime = context.ExpirationTime;
@@ -148,4 +152,41 @@ public class MessagePackEnvelope :
     {
     }
 
+    internal void Update<T>(SendContext<T> context) where T : class
+    {
+        DestinationAddress = context.DestinationAddress?.ToString();
+
+        if (context.SourceAddress != null)
+            SourceAddress = context.SourceAddress.ToString();
+
+        if (context.ResponseAddress != null)
+            ResponseAddress = context.ResponseAddress.ToString();
+
+        if (context.FaultAddress != null)
+            FaultAddress = context.FaultAddress.ToString();
+
+        if (context.MessageId.HasValue)
+            MessageId = context.MessageId.ToString();
+
+        if (context.RequestId.HasValue)
+            RequestId = context.RequestId.ToString();
+
+        if (context.ConversationId.HasValue)
+            ConversationId = context.ConversationId.ToString();
+
+        if (context.CorrelationId.HasValue)
+            CorrelationId = context.CorrelationId.ToString();
+
+        if (context.InitiatorId.HasValue)
+            InitiatorId = context.InitiatorId.ToString();
+
+        if (context.TimeToLive.HasValue)
+            ExpirationTime = DateTime.UtcNow + (context.TimeToLive > TimeSpan.Zero ? context.TimeToLive : TimeSpan.FromSeconds(1));
+
+        foreach (KeyValuePair<string, object> header in context.Headers.GetAll())
+            Headers[header.Key] = header.Value;
+
+        if (MessageType != null)
+            context.SupportedMessageTypes = MessageType;
+    }
 }

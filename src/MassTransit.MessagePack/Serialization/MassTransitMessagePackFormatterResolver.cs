@@ -1,4 +1,5 @@
-﻿namespace MassTransit.Serialization;
+﻿#define USE_CONCRETE_MAPPERS
+namespace MassTransit.Serialization;
 
 using System;
 using System.Collections.Concurrent;
@@ -29,6 +30,7 @@ class MassTransitMessagePackFormatterResolver :
         _mappedFormatterByType = new List<KeyValuePair<Type, Type>>
         {
             new(typeof(MessageData<>), typeof(MessageDataFormatter<>)),
+        #if USE_CONCRETE_MAPPERS
             new(typeof(Fault), typeof(InterfaceConcreteMapFormatter<Fault, FaultEvent>)),
             new(typeof(ReceiveFault), typeof(InterfaceConcreteMapFormatter<ReceiveFault, ReceiveFaultEvent>)),
             new(typeof(ExceptionInfo), typeof(InterfaceConcreteMapFormatter<ExceptionInfo, FaultExceptionInfo>)),
@@ -42,7 +44,6 @@ class MassTransitMessagePackFormatterResolver :
                 typeof(InterfaceConcreteMapFormatter<PauseScheduledRecurringMessage, PauseScheduledRecurringMessageCommand>)),
             new(typeof(ResumeScheduledRecurringMessage),
                 typeof(InterfaceConcreteMapFormatter<ResumeScheduledRecurringMessage, ResumeScheduledRecurringMessageCommand>)),
-            new(typeof(MessageEnvelope), typeof(InterfaceConcreteMapFormatter<MessageEnvelope, MessagePackEnvelope>)),
             new(typeof(RoutingSlip), typeof(InterfaceConcreteMapFormatter<RoutingSlip, RoutingSlipRoutingSlip>)),
             new(typeof(Activity), typeof(InterfaceConcreteMapFormatter<Activity, RoutingSlipActivity>)),
             new(typeof(ActivityLog), typeof(InterfaceConcreteMapFormatter<ActivityLog, RoutingSlipActivityLog>)),
@@ -95,6 +96,7 @@ class MassTransitMessagePackFormatterResolver :
             new(typeof(SetJobProgress), typeof(InterfaceConcreteMapFormatter<SetJobProgress, SetJobProgressCommand>)),
             new(typeof(StartJob), typeof(InterfaceConcreteMapFormatter<StartJob, StartJobCommand>)),
             new(typeof(StartJobAttempt), typeof(InterfaceConcreteMapFormatter<StartJobAttempt, StartJobAttemptCommand>))
+        #endif
         };
 
         _cachedFormatters = new ConcurrentDictionary<Type, IMessagePackFormatter>();

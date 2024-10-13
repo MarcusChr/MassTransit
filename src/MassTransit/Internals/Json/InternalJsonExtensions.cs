@@ -1,6 +1,7 @@
 ﻿#nullable enable
 
 using MassTransit.Metadata;
+using System;
 using System.Text.Json;
 
 namespace MassTransit.Internals.Json
@@ -27,6 +28,18 @@ namespace MassTransit.Internals.Json
             var jsonElement = JsonSerializer.SerializeToElement(objectToTransform, options);
 
             return jsonElement.GetObject<T>(options);
+        }
+
+        public static object? Transform(this object objectToTransform, Type targetType, JsonSerializerOptions options)
+        {
+            var jsonElement = JsonSerializer.SerializeToElement(objectToTransform, options);
+
+            if (targetType.IsInterface && MessageTypeCache.IsValidMessageType(targetType))
+            {
+                targetType = TypeMetadataCache.GetImplementationType(targetType);
+            }
+
+            return jsonElement.Deserialize(targetType, options);
         }
     }
 }
