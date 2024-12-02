@@ -12,10 +12,12 @@ namespace MassTransit.SagaStateMachine
         where TMessage : class
     {
         readonly Request<TSaga, TRequest, TResponse> _request;
+        readonly bool _completed;
 
-        public CancelRequestTimeoutActivity(Request<TSaga, TRequest, TResponse> request)
+        public CancelRequestTimeoutActivity(Request<TSaga, TRequest, TResponse> request, bool completed)
         {
             _request = request;
+            _completed = completed;
         }
 
         public void Accept(StateMachineVisitor visitor)
@@ -39,9 +41,10 @@ namespace MassTransit.SagaStateMachine
                     throw new ConfigurationException("A scheduler was not available to cancel the scheduled request timeout");
             }
 
-            await next.Execute(context).ConfigureAwait(false);
+            if (_request.Settings.ClearRequestIdOnFaulted || _completed)
+                _request.SetRequestId(context.Saga, default);
 
-            _request.SetRequestId(context.Saga, default);
+            await next.Execute(context).ConfigureAwait(false);
         }
 
         public Task Faulted<TException>(BehaviorExceptionContext<TSaga, TMessage, TException> context, IBehavior<TSaga, TMessage> next)

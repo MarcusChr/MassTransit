@@ -1,5 +1,6 @@
 namespace MassTransit.SqlTransport.SqlServer
 {
+    using System;
     using System.Threading;
     using System.Threading.Tasks;
     using Dapper;
@@ -914,7 +915,7 @@ BEGIN
                           sum(CASE WHEN mdx.EnqueueTime > @now AND mdx.ConsumerId = @consumerId AND mdx.LockId IS NOT NULL THEN 1 END)
                            over (partition by mdx.PartitionKey
                                order by mdx.EnqueueTime DESC, mdx.MessageDeliveryId DESC) as ActiveCount
-                   FROM transport.MessageDelivery mdx WITH (ROWLOCK, READPAST, UPDLOCK)
+                   FROM {0}.MessageDelivery mdx WITH (ROWLOCK, READPAST, UPDLOCK)
                    WHERE mdx.QueueId = @queueId
                      AND mdx.DeliveryCount < mdx.MaxDeliveryCount),
          so_ready as (SELECT ready.MessageDeliveryId
@@ -926,7 +927,7 @@ BEGIN
                       ORDER BY ready.Priority, ready.EnqueueTime, ready.MessageDeliveryId
                       OFFSET 0 ROWS FETCH NEXT @fetchCount ROWS ONLY),
          msgs AS (SELECT md.*
-                  FROM transport.MessageDelivery md
+                  FROM {0}.MessageDelivery md
                   WITH (ROWLOCK, READPAST, UPDLOCK)
                   WHERE md.MessageDeliveryId IN (SELECT MessageDeliveryId FROM so_ready))
     UPDATE dm
@@ -1239,6 +1240,7 @@ CREATE OR ALTER PROCEDURE {0}.RequeueMessages
     @queueName nvarchar(256),
     @sourceQueueType int,
     @targetQueueType int,
+    @messageCount int,
     @delay int = 0,
     @redeliveryCount int = 10
 AS
@@ -1293,12 +1295,83 @@ BEGIN
             AND mdx.LockId IS NULL
             AND mdx.ConsumerId IS NULL
             AND (mdx.ExpirationTime IS NULL OR mdx.ExpirationTime > @enqueueTime)
-            ORDER BY mdx.TransportMessageId OFFSET 0 ROWS
-        FETCH NEXT @redeliveryCount ROWS ONLY) mdy
+            ORDER BY mdx.MessageDeliveryId OFFSET 0 ROWS
+        FETCH NEXT @messageCount ROWS ONLY) mdy
     WHERE mdy.MessageDeliveryId = MessageDelivery.MessageDeliveryId;
 
     RETURN @@ROWCOUNT
 END";
+
+        const string SqlFnRequeueMessage = @"
+CREATE OR ALTER PROCEDURE {0}.RequeueMessage @messageDeliveryId bigint,
+                                                   @targetQueueType int,
+                                                   @delay int = 0,
+                                                   @redeliveryCount int = 10
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF NOT @targetQueueType BETWEEN 1 AND 3
+        BEGIN
+            THROW 50000, 'Invalid target queue type', 1;
+        END;
+
+    DECLARE @sourceQueueId bigint;
+    SELECT @sourceQueueId = md.QueueId
+    FROM {0}.MessageDelivery md
+    WHERE md.MessageDeliveryId = @messageDeliveryId;
+
+    IF @sourceQueueId IS NULL
+        BEGIN
+            THROW 50000, 'Message delivery not found', 1;
+        END;
+
+    DECLARE @sourceQueueName nvarchar(256);
+    DECLARE @sourceQueueType int;
+    SELECT @sourceQueueName = q.Name, @sourceQueueType = q.Type
+    FROM {0}.Queue q
+    WHERE q.Id = @sourceQueueId;
+
+    IF @sourceQueueName IS NULL
+        BEGIN
+            THROW 50000, 'Queue not found', 1;
+        END;
+
+    IF @sourceQueueType = @targetQueueType
+        BEGIN
+            THROW 50000, 'Source and target queue type must not be the same', 1;
+        END;
+
+    DECLARE @targetQueueId bigint;
+    SELECT @targetQueueId = q.Id
+    FROM {0}.Queue q
+    WHERE q.Name = @sourceQueueName
+      AND q.Type = @targetQueueType;
+
+    IF @targetQueueId IS NULL
+        BEGIN
+            THROW 50000, 'Queue type not found', 1;
+        END;
+
+    DECLARE @enqueueTime datetime2;
+    SET @enqueueTime = DATEADD(SECOND, @delay, SYSUTCDATETIME());
+
+    UPDATE {0}.MessageDelivery
+    SET EnqueueTime      = @enqueueTime,
+        QueueId          = @targetQueueId,
+        MaxDeliveryCount = MessageDelivery.DeliveryCount + @redeliveryCount
+    FROM (SELECT mdx.MessageDeliveryId
+          FROM {0}.MessageDelivery mdx WITH (ROWLOCK, UPDLOCK)
+          WHERE mdx.QueueId = @sourceQueueId
+            AND mdx.LockId IS NULL
+            AND mdx.ConsumerId IS NULL
+            AND (mdx.ExpirationTime IS NULL OR mdx.ExpirationTime > @enqueueTime)
+            AND mdx.MessageDeliveryId = @messageDeliveryId) mdy
+    WHERE mdy.MessageDeliveryId = MessageDelivery.MessageDeliveryId;
+
+    RETURN @@ROWCOUNT;
+END
+";
 
         const string SqlFnProcessMetrics = @"
 CREATE OR ALTER PROCEDURE {0}.ProcessMetrics
@@ -1550,8 +1623,6 @@ END
 
         public async Task CreateInfrastructure(SqlTransportOptions options, CancellationToken cancellationToken)
         {
-            await CreateSchemaIfNotExist(options, cancellationToken).ConfigureAwait(false);
-
             await using var connection = SqlServerSqlTransportConnection.GetDatabaseConnection(options);
             await connection.Open(cancellationToken).ConfigureAwait(false);
 
@@ -1573,6 +1644,7 @@ END
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnRenewMessageLock, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnUnlockMessage, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnMoveMessage, options.Schema)).ConfigureAwait(false);
+                await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnRequeueMessage, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnRequeueMessages, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnProcessMetrics, options.Schema)).ConfigureAwait(false);
                 await connection.Connection.ExecuteScalarAsync<int>(string.Format(SqlFnPurgeTopology, options.Schema)).ConfigureAwait(false);
@@ -1620,7 +1692,7 @@ END
             }
         }
 
-        async Task CreateSchemaIfNotExist(SqlTransportOptions options, CancellationToken cancellationToken)
+        public async Task CreateSchemaIfNotExist(SqlTransportOptions options, CancellationToken cancellationToken)
         {
             await using var connection = SqlServerSqlTransportConnection.GetDatabaseAdminConnection(options);
             await connection.Open(cancellationToken).ConfigureAwait(false);
@@ -1641,6 +1713,9 @@ END
 
         async Task GrantAccess(ISqlServerSqlTransportConnection connection, SqlTransportOptions options)
         {
+            if (string.IsNullOrWhiteSpace(options.Role))
+                throw new ArgumentException("The SQL transport migrator requires a valid Role, but Role was not specified", nameof(options));
+
             var result = await connection.Connection.ExecuteScalarAsync<int?>(string.Format(RoleExistsSql, options.Role)).ConfigureAwait(false);
             if (!result.HasValue)
             {
@@ -1652,6 +1727,9 @@ END
             await connection.Connection.ExecuteScalarAsync<int>(string.Format(GrantRoleSql, options.Role, options.Schema)).ConfigureAwait(false);
 
             _logger.LogDebug("Role {Role} granted access to schema {Schema}", options.Role, options.Schema);
+
+            if (string.IsNullOrWhiteSpace(options.Username))
+                throw new ArgumentException("The SQL transport migrator requires a valid Username, but Username was not specified", nameof(options));
 
             result = await connection.Connection.ExecuteScalarAsync<int?>(string.Format(RoleExistsSql, options.Username)).ConfigureAwait(false);
             if (!result.HasValue)
