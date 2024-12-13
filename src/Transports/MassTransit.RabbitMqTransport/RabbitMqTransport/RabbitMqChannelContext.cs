@@ -3,7 +3,6 @@
     using System;
     using System.Collections.Generic;
     using System.Threading;
-    using System.Threading.Channels;
     using System.Threading.Tasks;
     using MassTransit.Middleware;
     using RabbitMQ.Client;
@@ -16,8 +15,8 @@
         ChannelContext,
         IAsyncDisposable
     {
-        readonly ConnectionContext _connectionContext;
         readonly IChannel _channel;
+        readonly ConnectionContext _connectionContext;
 
         public RabbitMqChannelContext(ConnectionContext connectionContext, IChannel channel, CancellationToken cancellationToken)
             : base(connectionContext)
@@ -27,20 +26,6 @@
             CancellationToken = cancellationToken;
 
             _channel.ContinuationTimeout = _connectionContext.ContinuationTimeout;
-
-
-            _channel.ChannelShutdownAsync += OnChannelShutdown;
-            _channel.BasicAcksAsync += OnAcknowledged;
-            _channel.BasicNacksAsync += OnNotAcknowledged;
-            _channel.BasicReturnAsync += OnBasicReturn;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-
-            const string message = "ChannelContext Disposed";
-
-            await _channel.Cleanup(200, message, CancellationToken).ConfigureAwait(false);
         }
 
         public override CancellationToken CancellationToken { get; }
@@ -133,7 +118,7 @@
             {
                 await _channel.BasicNackAsync(deliveryTag, multiple, requeue, CancellationToken).ConfigureAwait(false);
             }
-            catch (ChannelClosedException) // if we are shutting down, the broker would already nack prefetched messages anyway
+            catch (AlreadyClosedException) // if we are shutting down, the broker would already nack prefetched messages anyway
             {
             }
         }
@@ -149,31 +134,11 @@
             await _channel.BasicCancelAsync(consumerTag, false, CancellationToken);
         }
 
-        Task OnBasicReturn(object channel, BasicReturnEventArgs args)
+        public async ValueTask DisposeAsync()
         {
-            LogContext.Debug?.Log("BasicReturn: {ReplyCode}-{ReplyText} {MessageId}", args.ReplyCode, args.ReplyText, args.BasicProperties.MessageId);
+            const string message = "ChannelContext Disposed";
 
-            return Task.CompletedTask;
-        }
-
-        Task OnChannelShutdown(object channel, ShutdownEventArgs reason)
-        {
-            _channel.ChannelShutdownAsync -= OnChannelShutdown;
-            _channel.BasicAcksAsync -= OnAcknowledged;
-            _channel.BasicNacksAsync -= OnNotAcknowledged;
-            _channel.BasicReturnAsync -= OnBasicReturn;
-
-            return Task.CompletedTask;
-        }
-
-        Task OnNotAcknowledged(object channel, BasicNackEventArgs args)
-        {
-            return Task.CompletedTask;
-        }
-
-        Task OnAcknowledged(object channel, BasicAckEventArgs args)
-        {
-            return Task.CompletedTask;
+            await _channel.Cleanup(200, message, CancellationToken).ConfigureAwait(false);
         }
     }
 }

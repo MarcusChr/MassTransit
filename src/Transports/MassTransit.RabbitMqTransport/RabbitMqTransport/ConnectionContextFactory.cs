@@ -32,16 +32,25 @@
 
             IPipeContextAgent<ConnectionContext> contextHandle = supervisor.AddContext(context);
 
-            async Task HandleShutdown(object sender, ShutdownEventArgs args)
+            Task HandleShutdown(object sender, ShutdownEventArgs args)
             {
-                await contextHandle.Stop(args.ReplyText).ConfigureAwait(false);
+                _ = Task.Run(() => contextHandle.Stop(args.ReplyText));
+
+                return Task.CompletedTask;
             }
 
             context.ContinueWith(task =>
             {
-                task.Result.Connection.ConnectionShutdownAsync += HandleShutdown;
+                var connectionContext = task.Result;
 
-                contextHandle.Completed.ContinueWith(_ => task.Result.Connection.ConnectionShutdownAsync -= HandleShutdown);
+                connectionContext.Connection.ConnectionShutdownAsync += HandleShutdown;
+
+                void RemoveHandler(Task _)
+                {
+                    connectionContext.Connection.ConnectionShutdownAsync -= HandleShutdown;
+                }
+
+                contextHandle.Completed.ContinueWith(RemoveHandler);
             }, TaskContinuationOptions.OnlyOnRanToCompletion);
 
             return contextHandle;

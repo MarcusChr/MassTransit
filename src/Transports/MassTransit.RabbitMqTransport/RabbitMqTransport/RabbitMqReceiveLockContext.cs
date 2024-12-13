@@ -2,14 +2,17 @@ namespace MassTransit.RabbitMqTransport
 {
     using System;
     using System.Threading.Tasks;
+    using RabbitMQ.Client;
+    using RabbitMQ.Client.Events;
+    using RabbitMQ.Client.Exceptions;
     using Transports;
 
 
     public class RabbitMqReceiveLockContext :
         ReceiveLockContext
     {
-        readonly ulong _deliveryTag;
         readonly ChannelContext _channel;
+        readonly ulong _deliveryTag;
 
         public RabbitMqReceiveLockContext(ChannelContext channel, ulong deliveryTag)
         {
@@ -19,11 +22,17 @@ namespace MassTransit.RabbitMqTransport
 
         public async Task Complete()
         {
+            if (_channel.Channel.IsClosed)
+            {
+                throw new OperationInterruptedException(
+                    new ShutdownEventArgs(ShutdownInitiator.Peer, 491, $"Channel is already closed: {_channel.Channel.CloseReason}"));
+            }
+
             try
             {
                 await _channel.BasicAck(_deliveryTag, false).ConfigureAwait(false);
             }
-            catch (InvalidOperationException exception)
+            catch (Exception exception)
             {
                 throw new TransportUnavailableException($"Message ACK failed: {_deliveryTag}", exception);
             }
@@ -31,6 +40,12 @@ namespace MassTransit.RabbitMqTransport
 
         public async Task Faulted(Exception exception)
         {
+            if (_channel.Channel.IsClosed)
+            {
+                throw new OperationInterruptedException(
+                    new ShutdownEventArgs(ShutdownInitiator.Peer, 491, $"Channel is already closed: {_channel.Channel.CloseReason}"));
+            }
+
             try
             {
                 await _channel.BasicNack(_deliveryTag, false, true).ConfigureAwait(false);
@@ -43,6 +58,12 @@ namespace MassTransit.RabbitMqTransport
 
         public Task ValidateLockStatus()
         {
+            if (_channel.Channel.IsClosed)
+            {
+                throw new OperationInterruptedException(
+                    new ShutdownEventArgs(ShutdownInitiator.Peer, 491, $"Channel is already closed: {_channel.Channel.CloseReason}"));
+            }
+
             return Task.CompletedTask;
         }
     }
